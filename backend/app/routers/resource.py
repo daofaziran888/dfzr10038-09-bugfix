@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 from app.schemas import ActionPayload, ActionResult, EntryPayload, PageResult
 from app.services import service_for
 from app.services.data_flow import FlowEffect, FLOW_TRIGGERS, flow_engine
+from app.store import store
 
 router = APIRouter(prefix="/api", tags=["业务资源"])
 
@@ -94,12 +95,19 @@ def create_entry(module: str, payload: EntryPayload) -> ActionResult:
 
 @router.get("/{module}/{entry_id}/flow-trace")
 def get_flow_trace(module: str, entry_id: int):
-    """查看某个 entry 参与的跨模块数据流副作用。"""
+    """查看某个 entry 参与的跨模块数据流副作用（只读预览，不落库）。"""
     require_service(module)
     effects: list[dict] = []
-    for key, triggers in FLOW_TRIGGERS.items():
-        if key.startswith(f"{module}/"):
+    seen: set[int] = set()
+    with store.preview():
+        for key, triggers in FLOW_TRIGGERS.items():
+            if not key.startswith(f"{module}/"):
+                continue
             for fn in triggers:
+                # 同一 trigger 可能挂在多个动作下，预览只执行一次。
+                if id(fn) in seen:
+                    continue
+                seen.add(id(fn))
                 eff = fn(entry_id)
                 effects.extend([{"name": e.name, "module": e.module, "entry_id": e.entry_id,
                                  "description": e.description, "timestamp": e.timestamp}

@@ -4,7 +4,9 @@
 """
 from __future__ import annotations
 
-from typing import Any
+import copy
+from contextlib import contextmanager
+from typing import Any, Iterator
 
 from app.seed import SEED_ROWS
 
@@ -25,6 +27,16 @@ class Store:
         for row in self.rows(module):
             if int(row.get("id", 0)) == entry_id:
                 return row
+        return None
+
+    @contextmanager
+    def preview(self) -> Iterator[None]:
+        """只读预览：临时执行链路后把数据还原，供 flow-trace 这类查询接口使用。"""
+        backup = copy.deepcopy(self._tables)
+        try:
+            yield
+        finally:
+            self._tables = backup
         return None
 
     def overview(self) -> dict[str, object]:
